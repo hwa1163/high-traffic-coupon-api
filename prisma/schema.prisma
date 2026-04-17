@@ -20,3 +20,18 @@ model User {
 
   @@map("users")
 }
+
+model Event {
+  id                BigInt   @id @default(autoincrement())
+  title             String   @db.VarChar(200)
+  totalQuantity     Int
+  remainingQuantity Int
+  startAt           DateTime
+  endAt             DateTime
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([startAt, endAt])
+  @@index([remainingQuantity])
+  @@map("events")
+}
