@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
+import { CouponModule } from './coupon/coupon.module';
 
 @Module({
   imports: [
@@ -16,8 +17,11 @@ import { EventsModule } from './events/events.module';
     HealthModule,
     UsersModule,
     EventsModule,
+    CouponModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule {
+
+}
