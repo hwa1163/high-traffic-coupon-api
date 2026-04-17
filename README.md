@@ -1,98 +1,140 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# High Traffic Coupon API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## 1. 프로젝트 소개
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+NestJS + Prisma + MariaDB 기반의 선착순 쿠폰 발급 시스템입니다.
 
-## Description
+대량 트래픽 상황에서도 다음 조건을 만족하도록 구현했습니다.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- 동일 유저의 중복 발급 방지
+- 쿠폰 총 수량 초과 발급 방지
+- 동시 요청 상황에서 안정적인 발급 처리
 
-## Project setup
+---
+
+## 2. 기술 스택
+
+- NestJS
+- Prisma
+- MariaDB
+- Node.js
+
+---
+
+## 3. 핵심 기능
+
+- 사용자 생성 및 조회
+- 이벤트 생성 및 조회
+- 쿠폰 생성
+- 쿠폰 발급
+- 동시성 제어를 고려한 선착순 발급 처리
+
+---
+
+## 4. 쿠폰 발급 핵심 로직
+
+쿠폰 발급 시 다음 조건을 만족하도록 구현했습니다.
+
+1. 동일 유저가 같은 쿠폰을 중복 발급받을 수 없도록 `couponId + userId` 복합 유니크 제약 적용
+2. `issuedCount < totalQuantity` 조건에서만 발급 수량 증가
+3. 트랜잭션을 통해 데이터 정합성 유지
+4. 동시 요청 환경에서도 총 수량 초과 발급 방지
+
+---
+
+## 5. 문제 상황 및 해결
+
+### 문제 상황
+
+초기 구현에서는 다음 순서로 쿠폰을 발급했습니다.
+
+- `couponIssue INSERT`
+- `coupon issuedCount UPDATE`
+
+이 구조는 동시 요청 상황에서 서로 다른 테이블의 락 획득 순서가 꼬이면서 데드락이 발생했습니다.
+
+### 발생 문제
+
+- Prisma 에러: `P2010`
+- DB 에러 코드: `1213`
+- 메시지: `Deadlock found when trying to get lock`
+
+### 해결 방법
+
+락 획득 순서를 일관되게 유지하기 위해 구조를 다음과 같이 변경했습니다.
+
+- `coupon issuedCount 조건부 UPDATE`
+- `couponIssue INSERT`
+
+또한 중복 발급 발생 시 증가한 수량을 원복하도록 처리했습니다.
+
+### 결과
+
+- 동시 요청 상황에서도 데드락 없이 안정적으로 동작
+- 서버 에러(500) 제거
+
+---
+
+## 6. 동시성 테스트
+
+### 테스트 조건
+
+- 쿠폰 총 수량: 100
+- 동시 요청 수: 150
+- 요청 사용자: 서로 다른 150명
+- 실행 방식: Node.js 스크립트를 통한 동시 요청
+
+### 기대 결과
+
+- 성공: 100
+- 실패: 50
+- 서버 에러: 0
+- 총 발급 수량이 100을 초과하지 않아야 함
+
+### 실제 결과
+
+- 성공: 100
+- 실패: 50
+- 중복 발급: 0
+- 품절 실패: 50
+- 서버 에러: 0
+
+### 결과 해석
+
+동시 요청 상황에서도 정확히 100건만 발급되었고, 나머지 50건은 정상적으로 품절 처리되었습니다.  
+이를 통해 총 수량 초과 발급이 발생하지 않음을 검증했습니다.
+
+---
+```md
+## 7. 테스트 방법
+
+### 실행 방법
 
 ```bash
-$ npm install
+# 유저 생성
+node scripts/create-users.js
+
+# 동시성 테스트 실행
+node scripts/concurrency-test.js
+
 ```
+## 8. DB 정합성 검증
 
-## Compile and run the project
+### 동시성 테스트 이후 다음 쿼리를 통해 실제 발급 수량과 발급 이력 수를 검증했습니다.
 
-```bash
-# development
-$ npm run start
+SELECT id, totalQuantity, issuedCount
+FROM coupons
+WHERE id = 1;
 
-# watch mode
-$ npm run start:dev
+SELECT COUNT(*) AS issue_count
+FROM coupon_issues
+WHERE couponId = 1;
 
-# production mode
-$ npm run start:prod
-```
+## 9. 확장 방향
 
-## Run tests
+### 현재는 단일 DB 트랜잭션 기반으로 동시성 문제를 해결했습니다. 추후 더 큰 트래픽 환경에서는 다음과 같은 구조로 확장할 수 있습니다.
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Redis 기반 선점 처리
+Queue 기반 비동기 발급 처리
+재시도 정책 적용
+모니터링 및 메트릭 수집
